@@ -1,5 +1,6 @@
 from shortGPT.config.path_utils import get_program_path
 import os
+
 magick_path = get_program_path("magick")
 if magick_path:
     os.environ['IMAGEMAGICK_BINARY'] = magick_path
@@ -7,18 +8,20 @@ from shortGPT.config.path_utils import handle_path
 import numpy as np
 import json
 from typing import Any, Dict, List, Union
-from moviepy.editor import (AudioFileClip, CompositeVideoClip,CompositeAudioClip, ImageClip,
-                            TextClip, VideoFileClip, vfx,)
+from moviepy.editor import (AudioFileClip, CompositeVideoClip, CompositeAudioClip, ImageClip,
+                            TextClip, VideoFileClip, vfx, )
 from moviepy.audio.fx.audio_loop import audio_loop
 from moviepy.audio.fx.audio_normalize import audio_normalize
 from shortGPT.editing_framework.rendering_logger import MoviepyProgressLogger
 
+
 def load_schema(json_path):
     return json.loads(open(json_path, 'r', encoding='utf-8').read())
 
+
 class CoreEditingEngine:
 
-    def generate_image(self, schema:Dict[str, Any],output_file , logger=None):
+    def generate_image(self, schema: Dict[str, Any], output_file, logger=None):
         assets = dict(sorted(schema['visual_assets'].items(), key=lambda item: item[1]['z']))
         clips = []
 
@@ -41,10 +44,10 @@ class CoreEditingEngine:
         image.save_frame(output_file)
         return output_file
 
-    def generate_video(self, schema:Dict[str, Any], output_file, logger=None) -> None:
+    def generate_video(self, schema: Dict[str, Any], output_file, logger=None) -> None:
         visual_assets = dict(sorted(schema['visual_assets'].items(), key=lambda item: item[1]['z']))
         audio_assets = dict(sorted(schema['audio_assets'].items(), key=lambda item: item[1]['z']))
-        
+
         visual_clips = []
         for asset_key in visual_assets:
             asset = visual_assets[asset_key]
@@ -62,7 +65,7 @@ class CoreEditingEngine:
                 raise ValueError(f'Invalid asset type: {asset_type}')
 
             visual_clips.append(clip)
-        
+
         audio_clips = []
 
         for asset_key in audio_assets:
@@ -70,23 +73,41 @@ class CoreEditingEngine:
             asset_type = asset['type']
             if asset_type == "audio":
                 audio_clip = self.process_audio_asset(asset)
+                audio_clips.append(audio_clip)
             else:
                 raise ValueError(f"Invalid asset type: {asset_type}")
 
-            audio_clips.append(audio_clip)
         video = CompositeVideoClip(visual_clips)
-        if(audio_clips):
+
+        if audio_clips:
             audio = CompositeAudioClip(audio_clips)
-            video.duration = audio.duration
+
+            # Calculate the dynamic speed factor
+            video_duration = video.duration
+            audio_duration = audio.duration
+            speed_factor = video_duration / audio_duration
+
+            # Adjust audio speed dynamically
+            adjusted_audio = audio.fx(vfx.speedx, factor=speed_factor)
+
+            # Ensure audio and video end at the same time
+            min_duration = min(video.duration, adjusted_audio.duration)
+            video = video.subclip(0, min_duration)
+            adjusted_audio = adjusted_audio.subclip(0, min_duration)
+
+            video.audio = adjusted_audio
+
             video.audio = audio
+
         if logger:
             my_logger = MoviepyProgressLogger(callBackFunction=logger)
-            video.write_videofile(output_file, codec='libx264', audio_codec='aac', fps=25, preset='veryfast', logger=my_logger)
+            video.write_videofile(output_file, codec='libx264', audio_codec='aac', fps=30, preset='veryfast',
+                                  logger=my_logger)
         else:
-            video.write_videofile(output_file, codec='libx264', audio_codec='aac', fps=25, preset='veryfast')
+            video.write_videofile(output_file, codec='libx264', audio_codec='aac', fps=30, preset='veryfast')
         return output_file
-    
-    def generate_audio(self, schema:Dict[str, Any], output_file, logger=None) -> None:
+
+    def generate_audio(self, schema: Dict[str, Any], output_file, logger=None) -> None:
         audio_assets = dict(sorted(schema['audio_assets'].items(), key=lambda item: item[1]['z']))
         audio_clips = []
 
@@ -107,19 +128,21 @@ class CoreEditingEngine:
         else:
             audio.write_audiofile(output_file)
         return output_file
+
     # Process common actions
     def process_common_actions(self,
-                                   clip: Union[VideoFileClip, ImageClip, TextClip, AudioFileClip],
-                                   actions: List[Dict[str, Any]]) -> Union[VideoFileClip, AudioFileClip, ImageClip, TextClip]:
+                               clip: Union[VideoFileClip, ImageClip, TextClip, AudioFileClip],
+                               actions: List[Dict[str, Any]]) -> Union[
+        VideoFileClip, AudioFileClip, ImageClip, TextClip]:
         for action in actions:
             if action['type'] == 'set_time_start':
                 clip = clip.set_start(action['param'])
                 continue
-   
+
             if action['type'] == 'set_time_end':
                 clip = clip.set_end(action['param'])
                 continue
-            
+
             if action['type'] == 'subclip':
                 clip = clip.subclip(**action['param'])
                 continue
@@ -128,11 +151,11 @@ class CoreEditingEngine:
 
     # Process common visual clip actions
     def process_common_visual_actions(self,
-                                   clip: Union[VideoFileClip, ImageClip, TextClip],
-                                   actions: List[Dict[str, Any]]) -> Union[VideoFileClip, ImageClip, TextClip]:
+                                      clip: Union[VideoFileClip, ImageClip, TextClip],
+                                      actions: List[Dict[str, Any]]) -> Union[VideoFileClip, ImageClip, TextClip]:
         clip = self.process_common_actions(clip, actions)
         for action in actions:
- 
+
             if action['type'] == 'resize':
                 clip = clip.resize(**action['param'])
                 continue
@@ -147,10 +170,10 @@ class CoreEditingEngine:
 
             if action['type'] == 'green_screen':
                 params = action['param']
-                color = params['color'] if  params['color'] else [52, 255, 20]
+                color = params['color'] if params['color'] else [52, 255, 20]
                 thr = params['thr'] if params['thr'] else 100
                 s = params['s'] if params['s'] else 5
-                clip = clip.fx(vfx.mask_color, color=color,thr=thr, s=s)
+                clip = clip.fx(vfx.mask_color, color=color, thr=thr, s=s)
                 continue
 
             if action['type'] == 'normalize_image':
@@ -161,17 +184,17 @@ class CoreEditingEngine:
                 ar = clip.aspect_ratio
                 height = action['param']['maxHeight']
                 width = action['param']['maxWidth']
-                if ar <1:
-                    clip = clip.resize((height*ar, height))
+                if ar < 1:
+                    clip = clip.resize((height * ar, height))
                 else:
-                    clip = clip.resize((width, width/ar))
+                    clip = clip.resize((width, width / ar))
                 continue
 
         return clip
 
     # Process audio actions
     def process_audio_actions(self, clip: AudioFileClip,
-                                   actions: List[Dict[str, Any]]) -> AudioFileClip:
+                              actions: List[Dict[str, Any]]) -> AudioFileClip:
         clip = self.process_common_actions(clip, actions)
         for action in actions:
             if action['type'] == 'normalize_music':
@@ -206,11 +229,13 @@ class CoreEditingEngine:
 
     def process_text_asset(self, asset: Dict[str, Any]) -> TextClip:
         text_clip_params = asset['parameters']
-        
-        if not (any(key in text_clip_params for key in ['text','fontsize', 'size'])):
+
+        if not (any(key in text_clip_params for key in ['text', 'fontsize', 'size'])):
             raise Exception('You must include at least a size or a fontsize to determine the size of your text')
         text_clip_params['txt'] = text_clip_params['text']
-        clip_info = {k: text_clip_params[k] for k in ('txt', 'fontsize', 'font', 'color', 'stroke_width', 'stroke_color', 'size', 'kerning', 'method', 'align') if k in text_clip_params}
+        clip_info = {k: text_clip_params[k] for k in (
+        'txt', 'fontsize', 'font', 'color', 'stroke_width', 'stroke_color', 'size', 'kerning', 'method', 'align') if
+                     k in text_clip_params}
         clip = TextClip(**clip_info)
 
         return self.process_common_visual_actions(clip, asset['actions'])
@@ -218,7 +243,7 @@ class CoreEditingEngine:
     def process_audio_asset(self, asset: Dict[str, Any]) -> AudioFileClip:
         clip = AudioFileClip(asset['parameters']['url'])
         return self.process_audio_actions(clip, asset['actions'])
-    
+
     def __normalize_image(self, clip):
         def f(get_frame, t):
             if f.normalized_frame is not None:
@@ -231,7 +256,6 @@ class CoreEditingEngine:
         f.normalized_frame = None
 
         return clip.fl(f)
-
 
     def __normalize_frame(self, frame):
         shape = np.shape(frame)
@@ -247,5 +271,5 @@ class CoreEditingEngine:
             return normalized_frame
         else:
             return frame
-        
+
 

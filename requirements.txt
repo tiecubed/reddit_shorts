@@ -10,11 +10,23 @@ proglog
 yt-dlp
 torch
 torchaudio
-### whisper timestamped 
 whisper-timestamped
 protobuf==3.20.3
 pillow==9.0.0
 moviepy==1.0.3
 progress
 questionary
-edge-tts
+edge-tts==6.1.9
+ffmpeg==1.4
+ffmpeg-python==0.2.0
+proglog==0.1.10
+progress==1.6
+python-dotenv==1.0.0
+questionary==2.0.1
+tiktoken==0.5.2
+tinydb==4.8.0
+tinymongo==0.2.0
+torch==2.1.2
+torchaudio==2.1.2
+whisper-timestamped==1.14.4
+yt-dlp==2023.11.16

@@ -1,20 +1,27 @@
 import re
+import nltk
+from nltk import sent_tokenize
+
+nltk.download('punkt')  # Download the punkt tokenizer data
+
 
 def getSpeechBlocks(whispered, silence_time=2):
-    text_blocks, (st, et, txt) = [], (0,0,"")
+    text_blocks, (st, et, txt) = [], (0, 0, "")
     for i, seg in enumerate(whispered['segments']):
         if seg['start'] - et > silence_time:
             if txt: text_blocks.append([[st, et], txt])
             (st, et, txt) = (seg['start'], seg['end'], seg['text'])
-        else: 
+        else:
             et, txt = seg['end'], txt + seg['text']
 
-    if txt: text_blocks.append([[st, et], txt]) # For last text block
+    if txt: text_blocks.append([[st, et], txt])  # For last text block
 
     return text_blocks
 
+
 def cleanWord(word):
     return re.sub(r'[^\w\s\-_"\'\']', '', word)
+
 
 def interpolateTimeFromDict(word_position, d):
     for key, value in d.items():
@@ -22,45 +29,54 @@ def interpolateTimeFromDict(word_position, d):
             return value
     return None
 
+
 def getTimestampMapping(whisper_analysis):
     index = 0
     locationToTimestamp = {}
     for segment in whisper_analysis['segments']:
         for word in segment['words']:
-            newIndex = index + len(word['text'])+1
+            newIndex = index + len(word['text']) + 1
             locationToTimestamp[(index, newIndex)] = word['end']
             index = newIndex
     return locationToTimestamp
 
 
-def splitWordsBySize(words, maxCaptionSize):
-    halfCaptionSize = maxCaptionSize / 2
+def splitWordsBySize(text, maxCaptionSize=15):
+    words = text.split()
+    cleaned_words = [cleanWord(word) for word in words]
+
     captions = []
-    while words:
-        caption = words[0]
-        words = words[1:]
-        while words and len(caption + ' ' + words[0]) <= maxCaptionSize:
-            caption += ' ' + words[0]
-            words = words[1:]
-            if len(caption) >= halfCaptionSize and words:
-                break
-        captions.append(caption)
+    current_caption = ""
+
+    for word in cleaned_words:
+        if len(current_caption + ' ' + word) <= maxCaptionSize:
+            current_caption += ' ' + word
+        else:
+            captions.append(current_caption.strip())
+            current_caption = word
+
+    if current_caption:
+        captions.append(current_caption.strip())
+
     return captions
 
-def getCaptionsWithTime(whisper_analysis, maxCaptionSize=15, considerPunctuation=False):
+
+def getCaptionsWithTime(whisper_analysis, considerPunctuation=False):
     wordLocationToTime = getTimestampMapping(whisper_analysis)
     position = 0
     start_time = 0
     CaptionsPairs = []
     text = whisper_analysis['text']
-    
+
     if considerPunctuation:
-        sentences = re.split(r'(?<=[.!?]) +', text)
-        words = [word for sentence in sentences for word in splitWordsBySize(sentence.split(), maxCaptionSize)]
+        sentences = sent_tokenize(text)
+        words = [cleanWord(word) for sentence in sentences for word in sentence.split()]
     else:
         words = text.split()
-        words = [cleanWord(word) for word in splitWordsBySize(words, maxCaptionSize)]
-    
+        words = [cleanWord(word) for word in words]
+
+    current_caption = ""
+
     for word in words:
         position += len(word) + 1
         end_time = interpolateTimeFromDict(position, wordLocationToTime)

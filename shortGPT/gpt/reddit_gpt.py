@@ -1,14 +1,16 @@
 from shortGPT.gpt import gpt_utils
 import random
 import json
+
+
 def generateRedditPostMetadata(title):
     name = generateUsername()
     if title and title[0] == '"':
         title = title.replace('"', '')
-    n_months = random.randint(1,11)
+    n_months = random.randint(1, 11)
     header = f"{name} - {n_months} months ago"
     n_comments = random.random() * 10 + 2
-    n_upvotes = n_comments*(1.2+ random.random()*2.5)
+    n_upvotes = n_comments * (1.2 + random.random() * 2.5)
     return title, header, f"{n_comments:.1f}k", f"{n_upvotes:.1f}k"
 
 
@@ -16,12 +18,29 @@ def getInterestingRedditQuestion():
     chat, system = gpt_utils.load_local_yaml_prompt('prompt_templates/reddit_generate_question.yaml')
     return gpt_utils.gpt3Turbo_completion(chat_prompt=chat, system=system, temp=1.08)
 
+
+# below replaces the above for targeting a specific subreddit
+# def getInterestingRedditQuestion(subreddit="creepypasta"):
+#    chat, system = gpt_utils.load_local_yaml_prompt('prompt_templates/reddit_generate_question.yaml')
+#    # Customize the prompt to explicitly focus on the specified subreddit
+#    chat += f"subreddit: {subreddit}\n"
+#    question = gpt_utils.gpt3Turbo_completion(chat_prompt=chat, system=system, temp=1.08)
+#
+#    # Check if the retrieved question mentions the specified subreddit
+#    if subreddit.lower() not in question.lower():
+#        # If not, retry with a more explicit request
+#        explicit_chat = f"Generate an interesting question from r/{subreddit} on reddit."
+#        question = gpt_utils.gpt3Turbo_completion(chat_prompt=explicit_chat, temp=1.08)
+
+#    return question
+
+
 def createRedditScript(question):
     chat, system = gpt_utils.load_local_yaml_prompt('prompt_templates/reddit_generate_script.yaml')
     chat = chat.replace("<<QUESTION>>", question)
-    result = "Reddit, " + question +" "+gpt_utils.gpt3Turbo_completion(chat_prompt=chat, system=system, temp=1.08)
+    result = "Reddit, " + question + " " + gpt_utils.gpt3Turbo_completion(chat_prompt=chat, system=system, temp=1.08)
     return result
-    
+
 
 def getRealisticness(text):
     chat, system = gpt_utils.load_local_yaml_prompt('prompt_templates/reddit_filter_realistic.yaml')

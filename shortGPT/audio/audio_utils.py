@@ -33,15 +33,17 @@ def downloadYoutubeAudio(url, outputFile):
     return None
 
 
-def speedUpAudio(tempAudioPath, outputFile, expected_duration=None):  # Speeding up the audio to make it under 60secs, otherwise the output video is not considered as a short.
+def speedUpAudio(tempAudioPath, outputFile,
+                 expected_duration=None):  # Speeding up the audio to make it under 60secs, otherwise the output video is not considered as a short.
     tempAudioPath, duration = get_asset_duration(tempAudioPath, False)
     if not expected_duration:
         if (duration > 57):
-            subprocess.run(['ffmpeg', '-i', tempAudioPath, '-af', f'atempo={(duration/57):.5f}', outputFile])
+            subprocess.run(['ffmpeg', '-i', tempAudioPath, '-af', f'atempo={(duration / 57):.5f}', outputFile])
         else:
             subprocess.run(['ffmpeg', '-i', tempAudioPath, outputFile])
     else:
-        subprocess.run(['ffmpeg', '-i', tempAudioPath, '-af', f'atempo={(duration/expected_duration):.5f}', outputFile])
+        subprocess.run(
+            ['ffmpeg', '-i', tempAudioPath, '-af', f'atempo={(duration / expected_duration):.5f}', outputFile])
     if (os.path.exists(outputFile)):
         return outputFile
 
@@ -61,13 +63,43 @@ def ChunkForAudio(alltext, chunk_size=2500):
     return chunks
 
 
-def audioToText(filename, model_size="base"):
+def audioToText(filename, model_size="base", output_file="caption.txt"):
     from whisper_timestamped import load_model, transcribe_timestamped
     global WHISPER_MODEL
-    if (WHISPER_MODEL == None):
+    if WHISPER_MODEL is None:
         WHISPER_MODEL = load_model(model_size)
-    gen = transcribe_timestamped(WHISPER_MODEL, filename, verbose=False, fp16=False)
-    return gen
+
+    try:
+        gen = transcribe_timestamped(WHISPER_MODEL, filename, verbose=False, fp16=False)
+
+        if 'segments' in gen and gen['segments']:
+            # If there are segments, handle each segment individually
+            segments_text = []
+            for segment in gen['segments']:
+                if 'text' in segment and segment['text']:
+                    segments_text.append(segment['text'])
+
+            if segments_text:
+                concatenated_text = ' '.join(segments_text)
+                save_caption_to_file(concatenated_text, output_file)
+                return {'text': concatenated_text, 'segments': gen['segments']}
+            else:
+                print(f"No text found in the transcription segments for {filename}")
+                return None
+        elif 'text' in gen and gen['text']:
+            save_caption_to_file(gen['text'], output_file)
+            return gen
+        else:
+            print(f"No text found in the transcription for {filename}")
+            return None
+    except Exception as e:
+        print(f"Error in audioToText: {e}")
+        return None
+
+
+def save_caption_to_file(caption_text, output_file):
+    with open(output_file, 'w', encoding='utf-8') as file:
+        file.write(caption_text)
 
 
 def getWordsPerSec(filename):
@@ -78,6 +110,7 @@ def getWordsPerSec(filename):
 def getCharactersPerSec(filename):
     a = audioToText(filename)
     return len(a['text']) / a['segments'][-1]['end']
+
 
 def run_background_audio_split(sound_file_path):
     try:
